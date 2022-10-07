@@ -1,9 +1,55 @@
 import { useState } from 'react';
+import { useMutation } from '@apollo/client';
+import { ADD_THOUGHT } from '../../utils/mutations';
+import { QUERY_THOUGHTS, QUERY_ME } from '../../utils/queries';
 
 
 const ThoughtForm = () => {
     const [thoughtText, setText] = useState('');
     const [characterCount, setCharacterCount] = useState(0);
+
+    // w/o dynamic updating after adding thought
+        // const [addThought, { error }] = useMutation(ADD_THOUGHT);
+    
+    // with dynamic updating after adding thought BUT ONLY W/ QUERY_THOUGHTS
+        // const [addThought, { error }] = useMutation(ADD_THOUGHT, {
+        //     update(cache, { data: { addThought } }) {
+        //       // read what's currently in the cache
+        //       const { thoughts } = cache.readQuery({ query: QUERY_THOUGHTS });
+        
+        //       // prepend the newest thought to the front of the array
+        //       cache.writeQuery({
+        //         query: QUERY_THOUGHTS,
+        //         data: { thoughts: [addThought, ...thoughts] }
+        //       });
+        //     }
+        // });
+
+    // with dynamic updating after adding thought (neccessary manual update because of array. see ReactionForm where it is isn't needded)
+    const [addThought, { error }] = useMutation(ADD_THOUGHT, {
+        update(cache, { data: { addThought } }) {
+      
+            // could potentially not exist yet, so wrap in a try/catch
+          try {
+            // update me array's cache
+            const { me } = cache.readQuery({ query: QUERY_ME });
+            cache.writeQuery({
+              query: QUERY_ME,
+              data: { me: { ...me, thoughts: [...me.thoughts, addThought] } },
+            });
+          } catch (e) {
+            console.warn("First thought insertion by user!")
+          }
+      
+          // update thought array's cache
+          const { thoughts } = cache.readQuery({ query: QUERY_THOUGHTS });
+          cache.writeQuery({
+            query: QUERY_THOUGHTS,
+            data: { thoughts: [addThought, ...thoughts] },
+          });
+        }
+    });
+
 
     const handleChange = event => {
         if (event.target.value.length <= 280) {
@@ -14,29 +60,41 @@ const ThoughtForm = () => {
 
     const handleFormSubmit = async event => {
         event.preventDefault();
-        setText('');
-        setCharacterCount(0);
+      
+        try {
+          // add thought to database
+          await addThought({
+            variables: { thoughtText }
+          });
+      
+          // clear form value
+          setText('');
+          setCharacterCount(0);
+        } catch (e) {
+          console.error(e);
+        }
     };
     
     return (
         <div>
-        <p className={`m-0 ${characterCount === 280 ? 'text-error' : ''}`}>
-            Character Count: {characterCount}/280
-        </p>
-        <form
-            className="flex-row justify-center justify-space-between-md align-stretch"
-            onSubmit={handleFormSubmit}
-        >
-            <textarea
-                placeholder="Here's a new thought..."
-                value={thoughtText}
-                className="form-input col-12 col-md-9"
-                onChange={handleChange}
-            ></textarea>
-            <button className="btn col-12 col-md-3" type="submit">
-                Submit
-            </button>
-        </form>
+            <p className={`m-0 ${characterCount === 280 || error ? 'text-error' : ''}`}>
+                Character Count: {characterCount}/280
+                {error && <span className="ml-2">Something went wrong...</span>}
+            </p>
+            <form
+                className="flex-row justify-center justify-space-between-md align-stretch"
+                onSubmit={handleFormSubmit}
+            >
+                <textarea
+                    placeholder="Here's a new thought..."
+                    value={thoughtText}
+                    className="form-input col-12 col-md-9"
+                    onChange={handleChange}
+                ></textarea>
+                <button className="btn col-12 col-md-3" type="submit">
+                    Submit
+                </button>
+            </form>
         </div>
     );
 };
